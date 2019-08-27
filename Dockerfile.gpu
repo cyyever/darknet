@@ -1,8 +1,8 @@
 FROM nvidia/cuda:10.1-cudnn7-devel
 RUN apt-get update \
- && apt-get install --no-install-recommends -y gcc build-essential
+ && apt-get install --no-install-recommends -y gcc build-essential cmake
 RUN mkdir -p /opt/darknet
 RUN mkdir -p /opt/bin
 COPY . /opt/darknet
 WORKDIR /opt/darknet
-RUN mkdir build && cd build && cmake -DENABLE_ZED_CAMERA=off -DENABLE_CUDNN_HALF=off -DENABLE_OPENCV=off .. && make -j8 && cp darknet /opt/bin
+RUN mkdir build2 && cd build2 && cmake -DENABLE_ZED_CAMERA=off -DENABLE_CUDNN_HALF=off -DENABLE_OPENCV=off .. && make -j8 && cp darknet /opt/bin

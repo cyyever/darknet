@@ -48,6 +48,20 @@ set(INSTALL_LIB_DIR      "${CMAKE_CURRENT_LIST_DIR}" CACHE PATH "Path where lib 
 set(INSTALL_INCLUDE_DIR  "include/darknet"           CACHE PATH "Path where headers will be installed")
 set(INSTALL_CMAKE_DIR    "share/darknet"             CACHE PATH "Path where cmake configs will be installed")
 
+if(ENABLE_CUDA)
+  include(FindPackageHandleStandardArgs)
+  find_program(nvidia_smi_BINARY NAMES nvidia-smi PATH_SUFFIXES "NVIDIA Corporation/NVSMI")
+  find_package_handle_standard_args(nvidia_smi DEFAULT_MSG nvidia_smi_BINARY)
+
+  set(ENABLE_CUDA FALSE)
+  if(nvidia_smi_FOUND)
+    execute_process(COMMAND ${nvidia_smi_BINARY} RESULT_VARIABLE result OUTPUT_QUIET ERROR_QUIET)
+    if(result)
+      set(ENABLE_CUDA TRUE)
+    endif()
+  endif()
+endif()
+
 if(${CMAKE_VERSION} VERSION_LESS "3.9.0")
   message(WARNING "To build with CUDA support you need CMake 3.9.0+")
   set(ENABLE_CUDA "FALSE" CACHE BOOL "Enable CUDA support" FORCE)
