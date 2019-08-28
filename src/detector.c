@@ -160,7 +160,9 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     pthread_t load_thread = load_data(args);
     int count = 0;
     //while(i*imgs < N*120){
-    while (get_current_batch(net) < net.max_batches) {
+    //while (get_current_batch(net) < net.max_batches) {
+    int epoch;
+    for(epoch=0;epoch<net.max_batches;epoch++){
         if (l.random && count++ % 10 == 0) {
             printf("Resizing\n");
             float random_val = rand_scale(1.4f);    // *x or /x
