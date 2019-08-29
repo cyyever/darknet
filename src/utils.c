@@ -173,15 +173,15 @@ void pm(int M, int N, float *A)
 
 void find_replace(const char* str, char* orig, char* rep, char* output)
 {
-    char* buffer = (char*)calloc(8192, sizeof(char));
+    char* buffer = strdup(str);
     char *p;
-
-    sprintf(buffer, "%s", str);
     if(!(p = strstr(buffer, orig))){  // Is 'orig' even in 'str'?
-        sprintf(output, "%s", str);
-        free(buffer);
+	if(str!=output) {
+	    strcpy(output,str);
+	}
         return;
     }
+
 
     *p = '\0';
 
@@ -209,15 +209,15 @@ void trim(char *str)
 
 void find_replace_extension(char *str, char *orig, char *rep, char *output)
 {
-    char* buffer = (char*)calloc(8192, sizeof(char));
-
-    sprintf(buffer, "%s", str);
+    char* buffer = strdup(str);
     char *p = strstr(buffer, orig);
     int offset = (p - buffer);
     int chars_from_end = strlen(buffer) - offset;
     if (!p || chars_from_end != strlen(orig)) {  // Is 'orig' even in 'str' AND is 'orig' found at the end of 'str'?
-        sprintf(output, "%s", str);
         free(buffer);
+	if(str != output) {
+	    strcpy(output,str);
+	}
         return;
     }
 
