@@ -1325,6 +1325,9 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
     FILE* json_file = NULL;
     if (outfile) {
         json_file = fopen(outfile, "wb");
+        if(!json_file) {
+          error("fopen failed");
+        }
         char *tmp = "[\n";
         fwrite(tmp, sizeof(char), strlen(tmp), json_file);
     }
@@ -1373,7 +1376,7 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
             show_image(im, "predictions");
         }
 
-        if (outfile) {
+        if (json_file) {
             if (json_buf) {
                 char *tmp = ", \n";
                 fwrite(tmp, sizeof(char), strlen(tmp), json_file);
@@ -1423,7 +1426,7 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
         if (filename) break;
     }
 
-    if (outfile) {
+    if (json_file) {
         char *tmp = "\n]";
         fwrite(tmp, sizeof(char), strlen(tmp), json_file);
         fclose(json_file);
