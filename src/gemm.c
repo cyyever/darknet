@@ -318,16 +318,6 @@ void gemm_nn_custom_bin_mean_transposed(int M, int N, int K, float ALPHA_UNUSED,
 
 //----------------------------
 
-// is not used
-void transpose_32x32_bits_my(uint32_t *A, uint32_t *B, int lda, int ldb)
-{
-    unsigned int x, y;
-    for (y = 0; y < 32; ++y) {
-        for (x = 0; x < 32; ++x) {
-            if (A[y * lda] & (1 << x)) B[x * ldb] |= (uint32_t)1 << y;
-        }
-    }
-}
 
 #ifndef GPU
 uint8_t reverse_8_bit(uint8_t a) {
@@ -485,7 +475,7 @@ void transpose_bin(uint32_t *A, uint32_t *B, const int n, const int m,
 {
     //printf("\n n = %d (n mod 32 = %d), m = %d (m mod 32 = %d) \n", n, n % 32, m, m % 32);
     //printf("\n lda = %d (lda mod 32 = %d), ldb = %d (ldb mod 32 = %d) \n", lda, lda % 32, ldb, ldb % 32);
-    int i;
+    int i = 0;
     #pragma omp parallel for
     for (i = 0; i < n; i += 32) {
         int j;
@@ -493,7 +483,6 @@ void transpose_bin(uint32_t *A, uint32_t *B, const int n, const int m,
             int a_index = i*lda + j;
             int b_index = j*ldb + i;
             transpose_32x32_bits_reversed_diagonale(&A[a_index / 32], &B[b_index / 32], lda / 32, ldb / 32);
-            //transpose_32x32_bits_my(&A[a_index/32], &B[b_index/32], lda/32, ldb/32);
         }
         for (; j < m; ++j) {
             if (get_bit((const unsigned char* const)A, i * lda + j)) set_bit((unsigned char* const)B, j * ldb + i);
@@ -1987,7 +1976,7 @@ void gemm_nn_fast(int M, int N, int K, float ALPHA,
     float *B, int ldb,
     float *C, int ldc)
 {
-    int i, j, k;
+    int i = 0, j, k;
     #pragma omp parallel for
     for (i = 0; i < M; ++i) {
         for (k = 0; k < K; ++k) {
@@ -2004,7 +1993,7 @@ void gemm_nn_bin_32bit_packed(int M, int N, int K, float ALPHA,
     uint32_t *B, int ldb,
     float *C, int ldc, float *mean_arr)
 {
-    int i;
+    int i = 0;
     #pragma omp parallel for
     for (i = 0; i < M; ++i) {   // l.n
         int j, s;
@@ -2037,7 +2026,7 @@ void convolution_2d(int w, int h, int ksize, int n, int c, int pad, int stride,
     const int out_w = (w + 2 * pad - ksize) / stride + 1;    // output_width=input_width for stride=1 and pad=1
     //int i, f, j;
 
-    int fil;
+    int fil = 0;
     // filter index
     #pragma omp parallel for      // "omp parallel for" - automatic parallelization of loop by using OpenMP
     for (fil = 0; fil < n; ++fil) {
@@ -2102,7 +2091,7 @@ void gemm_nn_custom_bin_mean_transposed(int M, int N, int K, float ALPHA_UNUSED,
     unsigned char *B, int ldb,
     float *C, int ldc, float *mean_arr)
 {
-    int i;
+    int i = 0;
 
     #pragma omp parallel for
     for (i = 0; i < M; ++i) {   // l.n - filters [16 - 55 - 1024]
@@ -2237,7 +2226,7 @@ void im2col_cpu_custom_bin(float* data_im,
     int channels, int height, int width,
     int ksize, int stride, int pad, float* data_col, int bit_align)
 {
-    int c;
+    int c = 0;
     const int height_col = (height + 2 * pad - ksize) / stride + 1;
     const int width_col = (width + 2 * pad - ksize) / stride + 1;
     const int channels_col = channels * ksize * ksize;
@@ -2407,7 +2396,7 @@ static inline void transpose_scalar_block(float *A, float *B, const int lda, con
 void transpose_block_SSE4x4(float *A, float *B, const int n, const int m,
     const int lda, const int ldb, const int block_size)
 {
-    int i;
+    int i = 0;
     #pragma omp parallel for
     for (i = 0; i < n; i += block_size) {
         int j, i2, j2;
@@ -2426,7 +2415,7 @@ void transpose_block_SSE4x4(float *A, float *B, const int n, const int m,
 void forward_maxpool_layer_avx(float *src, float *dst, int *indexes, int size, int w, int h, int out_w, int out_h, int c,
     int pad, int stride, int batch)
 {
-    int b, k;
+    int b, k = 0;
     const int w_offset = -pad / 2;
     const int h_offset = -pad / 2;
 
@@ -2504,7 +2493,7 @@ void gemm_nn_bin_transposed_32bit_packed(int M, int N, int K, float ALPHA,
     uint32_t *B, int ldb,
     float *C, int ldc, float *mean_arr)
 {
-    int i;
+    int i = 0;
     #pragma omp parallel for
     for (i = 0; i < M; ++i) {   // l.n
         int j, s;
@@ -2529,7 +2518,7 @@ void gemm_nn_bin_transposed_32bit_packed(int M, int N, int K, float ALPHA,
 void convolution_repacked(uint32_t *packed_input, uint32_t *packed_weights, float *output,
     int w, int h, int c, int n, int size, int pad, int new_lda, float *mean_arr)
 {
-    int fil;
+    int fil = 0;
     // filter index
     #pragma omp parallel for
     for (fil = 0; fil < n; ++fil) {
@@ -2664,7 +2653,7 @@ void gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA,
         gemm_nn_fast(M, N, K, ALPHA, A, lda, B, ldb, C, ldc);
     }
     else {
-        int t;
+        int t = 0;
         #pragma omp parallel for
         for (t = 0; t < M; ++t) {
             if (!TA && !TB)
