@@ -297,6 +297,9 @@ float get_network_cost(network net)
             ++count;
         }
     }
+    if (isnan(sum)) {
+	error("sum is nan");
+    }
     return sum/count;
 }
 
