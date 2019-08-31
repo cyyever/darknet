@@ -376,6 +376,8 @@ convolutional_layer make_convolutional_layer(int batch, int steps, int h, int w,
         l.biases = (float*)calloc(n, sizeof(float));
         l.bias_updates = (float*)calloc(n, sizeof(float));
     }
+    l.origin_weights = (float*)calloc(l.nweights, sizeof(float));
+    l.weight_updates_avg = (float*)calloc(l.nweights, sizeof(float));
 
     // float scale = 1./sqrt(size*size*c);
     float scale = sqrt(2./(size*size*c/groups));
@@ -896,7 +898,6 @@ void forward_convolutional_layer(convolutional_layer l, network_state state)
     if (l.xnor && (!l.align_bit_weights || state.train)) {
         if (!l.align_bit_weights || state.train) {
             binarize_weights(l.weights, l.n, l.nweights, l.binary_weights);
-            //printf("\n binarize_weights l.align_bit_weights = %p \n", l.align_bit_weights);
         }
         swap_binary(&l);
         binarize_cpu(state.input, l.c*l.h*l.w*l.batch, l.binary_input);

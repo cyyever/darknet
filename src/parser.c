@@ -39,6 +39,10 @@
 #include "version.h"
 #include "yolo_layer.h"
 
+int major = -1;
+int minor = -1;
+int revision = -1;
+
 typedef struct{
     char *type;
     list *options;
@@ -1092,6 +1096,36 @@ void save_convolutional_weights(layer l, FILE *fp)
         fwrite(l.rolling_variance, sizeof(float), l.n, fp);
     }
     fwrite(l.weights, sizeof(float), num, fp);
+    l.weight_updates_avg=(float*)calloc(num,sizeof(float));
+    if(!l.weight_updates_avg) {
+      error("calloc failed");
+    }
+    //3*3
+    int rows= (l.c/l.groups)*l.size*l.size;
+    int cols= l.n;
+    size_t k=0;
+    float sum=0;
+    for(int row=0;row<rows;row+=3) {
+      for(int col=0;col<cols;col++) {
+	 sum+=l.weights[row*cols+col]-l.origin_weights[row*cols+col];
+	 if (row+1<rows) {
+	    sum+=l.weights[(row+1)*cols+col]-l.origin_weights[(row+1)*cols+col];
+	 }
+	 if (row+2<rows) {
+	    sum+=l.weights[(row+2)*cols+col]-l.origin_weights[(row+2)*cols+col];
+	 }
+	 if(col+1==cols || col%3==0) {
+	   if (isnan(sum)) {
+	     error("sum is nan");
+	   }
+	   printf("\n weight_update_3_3_sum is %f\n",sum);
+	   l.weight_updates_avg[k]=sum/9;
+	   k++;
+	   sum=0;
+	 }
+      }
+    }
+    fwrite(l.weight_updates_avg, sizeof(float), num, fp);
 }
 
 void save_batchnorm_weights(layer l, FILE *fp)
@@ -1133,9 +1167,9 @@ void save_weights_upto(network net, char *filename, int cutoff)
     FILE *fp = fopen(filename, "wb");
     if(!fp) file_error(filename);
 
-    int major = MAJOR_VERSION;
-    int minor = MINOR_VERSION;
-    int revision = PATCH_VERSION;
+    major = MAJOR_VERSION;
+    minor = MINOR_VERSION;
+    revision = PATCH_VERSION;
     fwrite(&major, sizeof(int), 1, fp);
     fwrite(&minor, sizeof(int), 1, fp);
     fwrite(&revision, sizeof(int), 1, fp);
@@ -1256,52 +1290,41 @@ void load_batchnorm_weights(layer l, FILE *fp)
 #endif
 }
 
-/*
-void load_convolutional_weights_binary(layer l, FILE *fp)
-{
-    fread(l.biases, sizeof(float), l.n, fp);
-    if (l.batch_normalize && (!l.dontloadscales)){
-        fread(l.scales, sizeof(float), l.n, fp);
-        fread(l.rolling_mean, sizeof(float), l.n, fp);
-        fread(l.rolling_variance, sizeof(float), l.n, fp);
-    }
-    int size = (l.c / l.groups)*l.size*l.size;
-    int i, j, k;
-    for(i = 0; i < l.n; ++i){
-        float mean = 0;
-        fread(&mean, sizeof(float), 1, fp);
-        for(j = 0; j < size/8; ++j){
-            int index = i*size + j*8;
-            unsigned char c = 0;
-            fread(&c, sizeof(char), 1, fp);
-            for(k = 0; k < 8; ++k){
-                if (j*8 + k >= size) break;
-                l.weights[index + k] = (c & 1<<k) ? mean : -mean;
-            }
-        }
-    }
-#ifdef GPU
-    if(gpu_index >= 0){
-        push_convolutional_layer(l);
-    }
-#endif
-}
-*/
 
 void load_convolutional_weights(layer l, FILE *fp)
 {
     fread(l.biases, sizeof(float), l.n, fp);
-    if (l.batch_normalize && (!l.dontloadscales)){
-        puts("read scales");
+    if (l.batch_normalize ){
         fread(l.scales, sizeof(float), l.n, fp);
         fread(l.rolling_mean, sizeof(float), l.n, fp);
         fread(l.rolling_variance, sizeof(float), l.n, fp);
     }
     int num = l.nweights;
     fread(l.weights, sizeof(float), num, fp);
-    if (l.flipped) {
-        puts("flip CONVOLUTIONAL weights");
-        transpose_matrix(l.weights, (l.c/l.groups)*l.size*l.size, l.n);
+    memcpy(l.origin_weights,l.weights,num*sizeof(float));
+    if (revision==100) {
+	fread(l.weight_updates_avg, sizeof(float), num, fp);
+	puts("read weight_updates_avg");
+	if (getenv("use_weight_updates_avg") ) {
+	  //3*3
+	  int rows= (l.c/l.groups)*l.size*l.size;
+	  int cols= l.n;
+	  size_t k=0;
+	  for(int row=0;row<rows;row+=3) {
+	    for(int col=0;col<cols;col++) {
+	      l.weights[row*cols+col]+=l.weight_updates_avg[k];
+	      if (row+1<rows) {
+		l.weights[(row+1)*cols+col]+=l.weight_updates_avg[k];
+	      }
+	      if (row+2<rows) {
+		l.weights[(row+2)*cols+col]+=l.weight_updates_avg[k];
+	      }
+	      if(col+1==cols || col%3==0) {
+		k++;
+	      }
+	    }
+	  }
+	}
     }
 #ifdef GPU
     if(gpu_index >= 0){
@@ -1323,9 +1346,6 @@ void load_weights_upto(network *net, char *filename, int cutoff)
     FILE *fp = fopen(filename, "rb");
     if(!fp) file_error(filename);
 
-    int major;
-    int minor;
-    int revision;
     fread(&major, sizeof(int), 1, fp);
     fread(&minor, sizeof(int), 1, fp);
     fread(&revision, sizeof(int), 1, fp);
