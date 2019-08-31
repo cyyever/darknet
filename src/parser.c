@@ -1118,7 +1118,6 @@ void save_convolutional_weights(layer l, FILE *fp)
 	   if (isnan(sum)) {
 	     error("sum is nan");
 	   }
-	   printf("\n weight_update_3_3_sum is %f\n",sum);
 	   l.weight_updates_avg[k]=sum/9;
 	   k++;
 	   sum=0;
