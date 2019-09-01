@@ -71,7 +71,7 @@ void free_layer(layer l)
     if (l.scales)             free(l.scales), l.scales = NULL;
     if (l.scale_updates)      free(l.scale_updates), l.scale_updates = NULL;
     if (l.weights)            free(l.weights), l.weights = NULL;
-    if (l.original_weights)   free(l.original_weights), l.original_weights = NULL;
+    if (l.origin_weights)   free(l.origin_weights), l.origin_weights = NULL;
     if (l.weight_updates)     free(l.weight_updates), l.weight_updates = NULL;
     if (l.weight_updates_avg) free(l.weight_updates_avg), l.weight_updates_avg = NULL;
     if (l.align_bit_weights)  free(l.align_bit_weights);
