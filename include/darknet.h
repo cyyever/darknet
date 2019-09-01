@@ -320,7 +320,9 @@ struct layer {
     float *scale_updates;
 
     float *weights;
+    float *origin_weights;
     float *weight_updates;
+    float *weight_updates_avg;
 
     float scale_x_y;
     float iou_normalizer;
