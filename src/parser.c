@@ -1095,34 +1095,26 @@ void save_convolutional_weights(layer l, FILE *fp)
         fwrite(l.rolling_mean, sizeof(float), l.n, fp);
         fwrite(l.rolling_variance, sizeof(float), l.n, fp);
     }
-    fwrite(l.weights, sizeof(float), num, fp);
-    l.weight_updates_avg=(float*)calloc(num,sizeof(float));
-    if(!l.weight_updates_avg) {
-      error("calloc failed");
-    }
-    //3*3
-    int rows= (l.c/l.groups)*l.size*l.size;
-    int cols= l.n;
-    size_t k=0;
-    float sum=0;
-    for(int row=0;row<rows;row+=3) {
-      for(int col=0;col<cols;col++) {
-	 sum+=l.weights[row*cols+col]-l.origin_weights[row*cols+col];
-	 if (row+1<rows) {
-	    sum+=l.weights[(row+1)*cols+col]-l.origin_weights[(row+1)*cols+col];
-	 }
-	 if (row+2<rows) {
-	    sum+=l.weights[(row+2)*cols+col]-l.origin_weights[(row+2)*cols+col];
-	 }
-	 if(col+1==cols || col%3==0) {
-	   if (isnan(sum)) {
-	     error("sum is nan");
-	   }
-	   l.weight_updates_avg[k]=sum/9;
-	   k++;
-	   sum=0;
-	 }
+    memset(l.weight_updates_avg,0,sizeof(float)*num);
+    if(l.size==3) {
+      fwrite(l.origin_weights, sizeof(float), num, fp);
+      puts("dump");
+      int channels=l.c / l.groups;
+      assert(num==l.size*l.size*channels*l.n);
+      int k=0;
+      for (int n=0;n<l.n;n++) {
+        float *weights=l.weights+n*channels*l.size*l.size;
+        float *origin_weights=l.origin_weights+n*channels*l.size*l.size;
+        for(int c=0;c<channels;c++) {
+          for(int i=0;i<l.size*l.size;i++) {
+            l.weight_updates_avg[k+c]+=weights[i*channels+c]-origin_weights[i*channels+c];
+          }
+          l.weight_updates_avg[k+c]/=9;
+        }
+        k+=channels;
       }
+    } else {
+      fwrite(l.weights, sizeof(float), num, fp);
     }
     fwrite(l.weight_updates_avg, sizeof(float), num, fp);
 }
@@ -1300,31 +1292,26 @@ void load_convolutional_weights(layer l, FILE *fp)
     }
     int num = l.nweights;
     fread(l.weights, sizeof(float), num, fp);
-    memcpy(l.origin_weights,l.weights,num*sizeof(float));
     if (revision==100) {
-	fread(l.weight_updates_avg, sizeof(float), num, fp);
-	puts("read weight_updates_avg");
-	if (getenv("use_weight_updates_avg") ) {
-	  //3*3
-	  int rows= (l.c/l.groups)*l.size*l.size;
-	  int cols= l.n;
-	  size_t k=0;
-	  for(int row=0;row<rows;row+=3) {
-	    for(int col=0;col<cols;col++) {
-	      l.weights[row*cols+col]+=l.weight_updates_avg[k];
-	      if (row+1<rows) {
-		l.weights[(row+1)*cols+col]+=l.weight_updates_avg[k];
-	      }
-	      if (row+2<rows) {
-		l.weights[(row+2)*cols+col]+=l.weight_updates_avg[k];
-	      }
-	      if(col+1==cols || col%3==0) {
-		k++;
-	      }
-	    }
-	  }
-	}
+      puts("read weight_updates_avg");
+      fread(l.weight_updates_avg, sizeof(float), num, fp);
+      if(l.size==3) {
+        puts("use weight_updates_avg");
+        int channels=l.c / l.groups;
+        assert(num==l.size*l.size*channels*l.n);
+        int k=0;
+        for (int n=0;n<l.n;n++) {
+          float *weights=l.weights+n*channels*l.size*l.size;
+          for(int c=0;c<channels;c++) {
+            for(int i=0;i<l.size*l.size;i++) {
+              weights[i*channels+c]+=l.weight_updates_avg[k+c]*9;
+            }
+          }
+          k+=channels;
+        }
+      }
     }
+    memcpy(l.origin_weights,l.weights,num*sizeof(float));
 #ifdef GPU
     if(gpu_index >= 0){
         push_convolutional_layer(l);

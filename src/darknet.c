@@ -55,10 +55,10 @@ void average(int argc, char *argv[])
                 int num = l.n*l.c*l.size*l.size;
                 axpy_cpu(l.n, 1, l.biases, 1, out.biases, 1);
                 axpy_cpu(num, 1, l.weights, 1, out.weights, 1);
-		if(l.weight_updates_avg) {
-		    printf("add weight_updates_avg\n");
-		    axpy_cpu(num, 1, l.weight_updates_avg, 1, out.weight_updates_avg, 1);
-		}
+                if(l.weight_updates_avg) {
+                  printf("add weight_updates_avg\n");
+                  axpy_cpu(num, 1, l.weight_updates_avg, 1, out.weight_updates_avg, 1);
+                }
                 if(l.batch_normalize){
                     axpy_cpu(l.n, 1, l.scales, 1, out.scales, 1);
                     axpy_cpu(l.n, 1, l.rolling_mean, 1, out.rolling_mean, 1);
@@ -78,15 +78,15 @@ void average(int argc, char *argv[])
             int num = l.n*l.c*l.size*l.size;
             scal_cpu(l.n, 1./n, l.biases, 1);
             scal_cpu(num, 1./n, l.weights, 1);
-	    if(l.weight_updates_avg) {
-		    scal_cpu(num, 1./n, l.weight_updates_avg, 1);
-		    printf("divide weight_updates_avg\n");
-	    }
-                if(l.batch_normalize){
-                    scal_cpu(l.n, 1./n, l.scales, 1);
-                    scal_cpu(l.n, 1./n, l.rolling_mean, 1);
-                    scal_cpu(l.n, 1./n, l.rolling_variance, 1);
-                }
+            if(l.weight_updates_avg) {
+              scal_cpu(num, 1./n, l.weight_updates_avg, 1);
+              printf("divide weight_updates_avg\n");
+            }
+            if(l.batch_normalize){
+              scal_cpu(l.n, 1./n, l.scales, 1);
+              scal_cpu(l.n, 1./n, l.rolling_mean, 1);
+              scal_cpu(l.n, 1./n, l.rolling_variance, 1);
+            }
         }
         if(l.type == CONNECTED){
             scal_cpu(l.outputs, 1./n, l.biases, 1);
