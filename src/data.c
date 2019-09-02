@@ -881,7 +881,7 @@ data load_data_detection(int n, char **paths, int m, int w, int h, int c, int bo
             int pbot = rand_precalc_random(-dh, dh, r4);
             //printf("\n pleft = %d, pright = %d, ptop = %d, pbot = %d, ow = %d, oh = %d \n", pleft, pright, ptop, pbot, ow, oh);
 
-            float scale = rand_precalc_random(.25, 2, r_scale); // unused currently
+            //float scale = rand_precalc_random(.25, 2, r_scale); // unused currently
 
             if (letter_box)
             {
