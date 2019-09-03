@@ -1298,9 +1298,9 @@ void load_convolutional_weights(layer l, FILE *fp)
     int num = l.nweights;
     fread(l.weights, sizeof(float), num, fp);
     if (revision==100) {
-	if(!getenv("in_darknet_avg")) {
       puts("read weight_updates_avg");
       fread(l.weight_updates_avg, sizeof(float), num, fp);
+	if(!getenv("in_darknet_avg")) {
       if(l.size==3) {
         puts("use weight_updates_avg");
         int channels=l.c / l.groups;
@@ -1316,9 +1316,9 @@ void load_convolutional_weights(layer l, FILE *fp)
           k+=channels;
         }
       }
-} else {
-puts("in darknet avg ,no load ");
-}
+	} else {
+		puts("in darknet avg ,no load ");
+	}
     }
     memcpy(l.origin_weights,l.weights,num*sizeof(float));
 #ifdef GPU
