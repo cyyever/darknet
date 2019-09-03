@@ -1095,8 +1095,9 @@ void save_convolutional_weights(layer l, FILE *fp)
         fwrite(l.rolling_mean, sizeof(float), l.n, fp);
         fwrite(l.rolling_variance, sizeof(float), l.n, fp);
     }
-    memset(l.weight_updates_avg,0,sizeof(float)*num);
     if(l.size==3) {
+	if(!getenv("in_darknet_avg")) {
+      memset(l.weight_updates_avg,0,sizeof(float)*num);
       fwrite(l.origin_weights, sizeof(float), num, fp);
       puts("dump");
       int channels=l.c / l.groups;
@@ -1113,6 +1114,10 @@ void save_convolutional_weights(layer l, FILE *fp)
         }
         k+=channels;
       }
+	} else {
+puts("in_darknet_avg when save");
+      fwrite(l.weights, sizeof(float), num, fp);
+	}
     } else {
       fwrite(l.weights, sizeof(float), num, fp);
     }
@@ -1293,6 +1298,7 @@ void load_convolutional_weights(layer l, FILE *fp)
     int num = l.nweights;
     fread(l.weights, sizeof(float), num, fp);
     if (revision==100) {
+	if(!getenv("in_darknet_avg")) {
       puts("read weight_updates_avg");
       fread(l.weight_updates_avg, sizeof(float), num, fp);
       if(l.size==3) {
@@ -1310,6 +1316,9 @@ void load_convolutional_weights(layer l, FILE *fp)
           k+=channels;
         }
       }
+} else {
+puts("in darknet avg ,no load ");
+}
     }
     memcpy(l.origin_weights,l.weights,num*sizeof(float));
 #ifdef GPU

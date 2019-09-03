@@ -40,6 +40,7 @@ void average(int argc, char *argv[])
     network net = parse_network_cfg(cfgfile);
     network sum = parse_network_cfg(cfgfile);
 
+    setenv("in_darknet_avg","1",1);
     char *weightfile = argv[4];
     load_weights(&sum, weightfile);
 
