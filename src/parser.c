@@ -1095,31 +1095,27 @@ void save_convolutional_weights(layer l, FILE *fp)
         fwrite(l.rolling_mean, sizeof(float), l.n, fp);
         fwrite(l.rolling_variance, sizeof(float), l.n, fp);
     }
-    if(l.size==3) {
-	if(!getenv("in_darknet_avg")) {
-      memset(l.weight_updates_avg,0,sizeof(float)*num);
-      fwrite(l.origin_weights, sizeof(float), num, fp);
-      puts("dump");
-      int channels=l.c / l.groups;
-      assert(num==l.size*l.size*channels*l.n);
-      int k=0;
-      for (int n=0;n<l.n;n++) {
-        float *weights=l.weights+n*channels*l.size*l.size;
-        float *origin_weights=l.origin_weights+n*channels*l.size*l.size;
-        for(int c=0;c<channels;c++) {
-          for(int i=0;i<l.size*l.size;i++) {
-            l.weight_updates_avg[k+c]+=weights[i*channels+c]-origin_weights[i*channels+c];
-          }
-          l.weight_updates_avg[k+c]/=9;
-        }
-        k+=channels;
-      }
-	} else {
-puts("in_darknet_avg when save");
-      fwrite(l.weights, sizeof(float), num, fp);
+    if(!getenv("in_darknet_avg")) {
+	memset(l.weight_updates_avg,0,sizeof(float)*num);
+	fwrite(l.origin_weights, sizeof(float), num, fp);
+	puts("dump");
+	int channels=l.c / l.groups;
+	assert(num==l.size*l.size*channels*l.n);
+	int k=0;
+	for (int n=0;n<l.n;n++) {
+	    float *weights=l.weights+n*channels*l.size*l.size;
+	    float *origin_weights=l.origin_weights+n*channels*l.size*l.size;
+	    for(int c=0;c<channels;c++) {
+		for(int i=0;i<l.size*l.size;i++) {
+		    l.weight_updates_avg[k+c]+=weights[i*channels+c]-origin_weights[i*channels+c];
+		}
+		l.weight_updates_avg[k+c]/=(l.size*l.size);
+	    }
+	    k+=channels;
 	}
     } else {
-      fwrite(l.weights, sizeof(float), num, fp);
+	puts("in_darknet_avg when save");
+	fwrite(l.weights, sizeof(float), num, fp);
     }
     fwrite(l.weight_updates_avg, sizeof(float), num, fp);
 }
@@ -1298,26 +1294,24 @@ void load_convolutional_weights(layer l, FILE *fp)
     int num = l.nweights;
     fread(l.weights, sizeof(float), num, fp);
     if (revision==100) {
-      puts("read weight_updates_avg");
-      fread(l.weight_updates_avg, sizeof(float), num, fp);
+	puts("read weight_updates_avg");
+	fread(l.weight_updates_avg, sizeof(float), num, fp);
 	if(!getenv("in_darknet_avg")) {
-      if(l.size==3) {
-        puts("use weight_updates_avg");
-        int channels=l.c / l.groups;
-        assert(num==l.size*l.size*channels*l.n);
-        int k=0;
-        for (int n=0;n<l.n;n++) {
-          float *weights=l.weights+n*channels*l.size*l.size;
-          for(int c=0;c<channels;c++) {
-            for(int i=0;i<l.size*l.size;i++) {
-              weights[i*channels+c]+=l.weight_updates_avg[k+c]*9;
-            }
-          }
-          k+=channels;
-        }
-      }
+	    puts("use weight_updates_avg");
+	    int channels=l.c / l.groups;
+	    assert(num==l.size*l.size*channels*l.n);
+	    int k=0;
+	    for (int n=0;n<l.n;n++) {
+		float *weights=l.weights+n*channels*l.size*l.size;
+		for(int c=0;c<channels;c++) {
+		    for(int i=0;i<l.size*l.size;i++) {
+			weights[i*channels+c]+=l.weight_updates_avg[k+c];
+		    }
+		}
+		k+=channels;
+	    }
 	} else {
-		puts("in darknet avg ,no load ");
+	    puts("in darknet avg ,no load ");
 	}
     }
     memcpy(l.origin_weights,l.weights,num*sizeof(float));
