@@ -176,7 +176,6 @@ box_label *read_boxes(char *filename, int *n)
     box_label* boxes = (box_label*)calloc(1, sizeof(box_label));
     FILE *file = fopen(filename, "r");
     if (!file) {
-        printf("Can't open label file. (This can be normal only if you use MSCOCO): %s \n", filename);
         //file_error(filename);
         FILE* fw = fopen("bad.list", "a");
         fwrite(filename, sizeof(char), strlen(filename), fw);
