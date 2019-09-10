@@ -110,7 +110,10 @@ static cudaStream_t streamsArray[16];    // cudaStreamSynchronize( get_cuda_stre
 static int streamInit[16] = { 0 };
 
 cudaStream_t get_cuda_stream() {
+    std::vector<std::mutex> mus(32);
     int i = cuda_get_device();
+    assert(i>=0);
+    std::lock_guard<std::mutex> lk(mus.at(i));
     if (!streamInit[i]) {
         cudaError_t status = cudaStreamCreate(&streamsArray[i]);
         //cudaError_t status = cudaStreamCreateWithFlags(&streamsArray[i], cudaStreamNonBlocking);

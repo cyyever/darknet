@@ -1,3 +1,6 @@
+#include <omp.h>
+#include <vector>
+#include <mutex>
 #include "darknet.h"
 #include "network.h"
 #include "region_layer.h"
@@ -672,6 +675,8 @@ int detections_comparator(const void *pa, const void *pb)
     return 0;
 }
 
+void *load_thread(void *ptr);
+
 float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, float thresh_calc_avg_iou, const float iou_thresh, const int map_points, int letter_box,int *gpus,int ngpus)
 {
     int j;
@@ -682,6 +687,7 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
     int names_size = 0;
     char **names = get_labels_custom(name_list, &names_size); //get_labels(name_list);
 
+    std::vector<std::mutex> mus(ngpus);
     network* nets = (network*)xcalloc(ngpus, sizeof(network));
     for (int i = 0; i < ngpus; ++i) {
 #ifdef GPU
@@ -731,7 +737,8 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
     int tp_for_thresh = 0;
     int fp_for_thresh = 0;
 
-    box_prob* detections = (box_prob*)xcalloc(1, sizeof(box_prob));
+    std::vector<box_prob> detections;
+    detections.reserve(5000);
     int detections_count = 0;
     int unique_truth_count = 0;
 
@@ -743,33 +750,40 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
     int *fp_for_thresh_per_class = (int*)xcalloc(classes, sizeof(int));
 
     time_t start = time(0);
-#pragma omp parallel for num_threads(72)
+#pragma omp parallel for num_threads(8)
     for (int image_index = 0; image_index < m;image_index++) {
-        int thd_id= omp_get_thread_num();    
-        fprintf(stderr, "image_index=%d,thd_id=%d\n", image_index,thd_id);
-        const char *path = paths[image_index];
+        int net_index= (omp_get_thread_num()%ngpus   ) ;
+        /* fprintf(stderr, "image_index=%d,thd_id=%d\n", image_index,omp_get_thread_num()); */
+        char *path = paths[image_index];
         load_args* thd_args = (load_args*)xcalloc(1, sizeof(load_args));
         *thd_args=args;
         thd_args->path = path;
-        thd_args->im = xcalloc(1,sizeof(image));
-        thd_args->resized = xcalloc(1,sizeof(image));
-        load_thread(thd_args);
+        thd_args->im = (image*)xcalloc(1,sizeof(image));
+        thd_args->resized = (image*)xcalloc(1,sizeof(image));
         image * val_resized=thd_args->resized;
         image * val=thd_args->im;
+        load_thread(thd_args);
 
         char *id = basecfg(path);
         float *X = val_resized->data;
-        network *net=&(nets[thd_id%ngpus]);
-        network_predict(*net, X);
+        network *net=&(nets[net_index]);
+
+        {
+          std::lock_guard<std::mutex> lk(mus.at(net_index));
+          network_predict(*net, X);
+        }
 
         int nboxes = 0;
         float hier_thresh = 0;
         detection *dets;
-        if (args.type == LETTERBOX_DATA) {
+        {
+          std::lock_guard<std::mutex> lk(mus.at(net_index));
+          if (args.type == LETTERBOX_DATA) {
             dets = get_network_boxes(net, val->w, val->h, thresh, hier_thresh, 0, 1, &nboxes, letter_box);
-        }
-        else {
+          }
+          else {
             dets = get_network_boxes(net, 1, 1, thresh, hier_thresh, 0, 0, &nboxes, letter_box);
+          }
         }
         if (nms) do_nms_sort(dets, nboxes, classes, nms);
 
@@ -801,7 +815,7 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
 
 #pragma omp critical 
         {
-          const int checkpoint_detections_count = detections_count;
+          const size_t checkpoint_detections_count = detections.size();
 
           for (i = 0; i < nboxes; ++i) {
 
@@ -809,25 +823,19 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
             for (class_id = 0; class_id < classes; ++class_id) {
               float prob = dets[i].prob[class_id];
               if (prob > 0) {
-                detections_count++;
-                detections = (box_prob*)realloc(detections, detections_count * sizeof(box_prob));
-                if (!detections) {
-                  error("realloc failed");
-                }
-                detections[detections_count - 1].b = dets[i].bbox;
-                detections[detections_count - 1].p = prob;
-                detections[detections_count - 1].image_index = image_index;
-                detections[detections_count - 1].class_id = class_id;
-                detections[detections_count - 1].truth_flag = 0;
-                detections[detections_count - 1].unique_truth_index = -1;
+                detections.emplace_back();
+                detections.back().b = dets[i].bbox;
+                detections.back().p = prob;
+                detections.back().image_index = image_index;
+                detections.back().class_id = class_id;
+                detections.back().truth_flag = 0;
+                detections.back().unique_truth_index = -1;
 
                 int truth_index = -1;
                 float max_iou = 0;
                 for (j = 0; j < num_labels; ++j)
                 {
                   box t = { truth[j].x, truth[j].y, truth[j].w, truth[j].h };
-                  //printf(" IoU = %f, prob = %f, class_id = %d, truth[j].id = %d \n",
-                  //    box_iou(dets[i].bbox, t), prob, class_id, truth[j].id);
                   float current_iou = box_iou(dets[i].bbox, t);
                   if (current_iou > iou_thresh && class_id == truth[j].id) {
                     if (current_iou > max_iou) {
@@ -839,8 +847,8 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
 
                 // best IoU
                 if (truth_index > -1) {
-                  detections[detections_count - 1].truth_flag = 1;
-                  detections[detections_count - 1].unique_truth_index = truth_index;
+                  detections.back().truth_flag = 1;
+                  detections.back().unique_truth_index = truth_index;
                 }
                 else {
                   // if object is difficult then remove detection
@@ -856,8 +864,8 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
 
                 // calc avg IoU, true-positives, false-positives for required Threshold
                 if (prob > thresh_calc_avg_iou) {
-                  int z, found = 0;
-                  for (z = checkpoint_detections_count; z < detections_count - 1; ++z) {
+                  int  found = 0;
+                  for (size_t z = checkpoint_detections_count; z < detections.size() ; ++z) {
                     if (detections[z].unique_truth_index == truth_index) {
                       found = 1; break;
                     }
@@ -885,7 +893,6 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
         free(id);
         free_image(*val);
         free_image(*val_resized);
-        free(thd_args);
     }
 
     if ((tp_for_thresh + fp_for_thresh) > 0)
@@ -898,7 +905,7 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
     }
 
     // SORT(detections)
-    qsort(detections, detections_count, sizeof(box_prob), detections_comparator);
+    qsort(detections.data(), detections.size(), sizeof(box_prob), detections_comparator);
 
     typedef struct {
         double precision;
@@ -1049,7 +1056,6 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
         free(pr[i]);
     }
     free(pr);
-    free(detections);
     free(truth_classes_count);
     free(detection_per_class_count);
 
