@@ -521,6 +521,7 @@ void validate_classifier_full(char *datacfg, char *filename, char *weightfile)
 
         printf("%d: top 1: %f, top %d: %f\n", i, avg_acc/(i+1), topk, avg_topk/(i+1));
     }
+    free(indexes);
 }
 
 
@@ -600,6 +601,7 @@ float validate_classifier_single(char *datacfg, char *filename, char *weightfile
         else printf("\n");
         printf("%d: top 1: %f, top %d: %f", i, avg_acc/(i+1), topk, avg_topk/(i+1));
     }
+    free(indexes);
     if (existing_net) {
         set_batch_network(&net, old_batch);
     }
@@ -670,6 +672,7 @@ void validate_classifier_multi(char *datacfg, char *filename, char *weightfile)
 
         printf("%d: top 1: %f, top %d: %f\n", i, avg_acc/(i+1), topk, avg_topk/(i+1));
     }
+    free(indexes);
 }
 
 void try_classifier(char *datacfg, char *cfgfile, char *weightfile, char *filename, int layer_num)
@@ -689,7 +692,6 @@ void try_classifier(char *datacfg, char *cfgfile, char *weightfile, char *filena
     int top = option_find_int(options, "top", 1);
     if (top > classes) top = classes;
 
-    int i = 0;
     char **names = get_labels(name_list);
     clock_t time;
     int* indexes = (int*)calloc(top, sizeof(int));
@@ -702,7 +704,7 @@ void try_classifier(char *datacfg, char *cfgfile, char *weightfile, char *filena
             printf("Enter Image Path: ");
             fflush(stdout);
             input = fgets(input, 256, stdin);
-            if(!input) return;
+            if(!input) break;
             strtok(input, "\n");
         }
         image orig = load_image_color(input, 0, 0);
@@ -722,13 +724,13 @@ void try_classifier(char *datacfg, char *cfgfile, char *weightfile, char *filena
         float *predictions = network_predict(net, X);
 
         layer l = net.layers[layer_num];
-        for(i = 0; i < l.c; ++i){
+        for(int i = 0; i < l.c; ++i){
             if(l.rolling_mean) printf("%f %f %f\n", l.rolling_mean[i], l.rolling_variance[i], l.scales[i]);
         }
 #ifdef GPU
         cuda_pull_array(l.output_gpu, l.output, l.outputs);
 #endif
-        for(i = 0; i < l.outputs; ++i){
+        for(int i = 0; i < l.outputs; ++i){
             printf("%f\n", l.output[i]);
         }
         /*
@@ -746,13 +748,14 @@ void try_classifier(char *datacfg, char *cfgfile, char *weightfile, char *filena
 
         top_predictions(net, top, indexes);
         printf("%s: Predicted in %f seconds.\n", input, sec(clock()-time));
-        for(i = 0; i < top; ++i){
+        for(int i = 0; i < top; ++i){
             int index = indexes[i];
             printf("%s: %f\n", names[index], predictions[index]);
         }
         free_image(im);
         if (filename) break;
     }
+    free(indexes);
 }
 
 void predict_classifier(char *datacfg, char *cfgfile, char *weightfile, char *filename, int top)
@@ -779,6 +782,9 @@ void predict_classifier(char *datacfg, char *cfgfile, char *weightfile, char *fi
     char **names = get_labels(name_list);
     clock_t time;
     int* indexes = (int*)calloc(top, sizeof(int));
+    if(!indexes) {
+        error("calloc failed");
+    }
     char buff[256];
     char *input = buff;
     //int size = net.w;
@@ -789,7 +795,7 @@ void predict_classifier(char *datacfg, char *cfgfile, char *weightfile, char *fi
             printf("Enter Image Path: ");
             fflush(stdout);
             input = fgets(input, 256, stdin);
-            if(!input) return;
+            if(!input) break;
             strtok(input, "\n");
         }
         image im = load_image_color(input, 0, 0);
@@ -814,6 +820,7 @@ void predict_classifier(char *datacfg, char *cfgfile, char *weightfile, char *fi
         free_image(im);
         if (filename) break;
     }
+    free(indexes);
 }
 
 
@@ -1274,7 +1281,7 @@ void run_classifier(int argc, char **argv)
     char *layer_s = (argc > 7) ? argv[7]: 0;
     int layer = layer_s ? atoi(layer_s) : -1;
     if(0==strcmp(argv[2], "predict")) predict_classifier(data, cfg, weights, filename, top);
-    else if(0==strcmp(argv[2], "try")) try_classifier(data, cfg, weights, filename, atoi(layer_s));
+    else if(0==strcmp(argv[2], "try")) try_classifier(data, cfg, weights, filename, layer);
     else if(0==strcmp(argv[2], "train")) train_classifier(data, cfg, weights, gpus, ngpus, clear, dont_show, mjpeg_port, calc_topk);
     else if(0==strcmp(argv[2], "demo")) demo_classifier(data, cfg, weights, cam_index, filename);
     else if(0==strcmp(argv[2], "gun")) gun_classifier(data, cfg, weights, cam_index, filename);

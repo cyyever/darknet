@@ -23,6 +23,21 @@
 #pragma warning(disable: 4996)
 #endif
 
+void *xcalloc(size_t nmemb, size_t size) {
+    void *ptr=calloc(nmemb,size);
+    if(!ptr) {
+        calloc_error();
+    }
+    return ptr;
+}
+void *xrealloc(void *ptr, size_t size) {
+    ptr=realloc(ptr,size);
+    if(!ptr) {
+        realloc_error();
+    }
+    return ptr;
+}
+
 double what_time_is_it_now()
 {
     struct timeval time;
@@ -182,11 +197,14 @@ void pm(int M, int N, float *A)
 void find_replace(const char* str, char* orig, char* rep, char* output)
 {
     char* buffer = strdup(str);
+    if(!buffer) {
+        error("strdup failed");
+    }
     char *p;
     if(!(p = strstr(buffer, orig))){  // Is 'orig' even in 'str'?
-	if(str!=output) {
-	    strcpy(output,str);
-	}
+        if(str!=output) {
+            strcpy(output,str);
+        }
         return;
     }
 
@@ -199,8 +217,10 @@ void find_replace(const char* str, char* orig, char* rep, char* output)
 
 void trim(char *str)
 {
-    char* buffer = (char*)calloc(8192, sizeof(char));
-    sprintf(buffer, "%s", str);
+    char* buffer = strdup(str);
+    if(!buffer) {
+        error("strdup failed");
+    }
 
     char *p = buffer;
     while (*p == ' ' || *p == '\t') ++p;
@@ -210,8 +230,7 @@ void trim(char *str)
         *end = '\0';
         --end;
     }
-    sprintf(str, "%s", p);
-
+    strcpy(str,p);
     free(buffer);
 }
 
@@ -219,14 +238,14 @@ void find_replace_extension(char *str, char *orig, char *rep, char *output)
 {
     char* buffer = strdup(str);
     if(!buffer) {
-      error("strdup failed");
+        error("strdup failed");
     }
     char *p = strstr(buffer, orig);
     if (p && *(p+strlen(orig)) == '\0') {
         *p = '\0';
         sprintf(output, "%s%s%s", buffer, rep, p + strlen(orig));
     } else if(str!=output) {
-	    strcpy(output,str);
+        strcpy(output,str);
     }
     free(buffer);
     return;
@@ -303,6 +322,18 @@ void error(const char *s)
 void malloc_error()
 {
     fprintf(stderr, "Malloc error\n");
+    exit(EXIT_FAILURE);
+}
+
+void calloc_error()
+{
+    fprintf(stderr, "Calloc error\n");
+    exit(EXIT_FAILURE);
+}
+
+void realloc_error()
+{
+    fprintf(stderr, "Realloc error\n");
     exit(EXIT_FAILURE);
 }
 

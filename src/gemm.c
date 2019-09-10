@@ -318,6 +318,18 @@ void gemm_nn_custom_bin_mean_transposed(int M, int N, int K, float ALPHA_UNUSED,
 
 //----------------------------
 
+// is not used
+/*
+void transpose_32x32_bits_my(uint32_t *A, uint32_t *B, int lda, int ldb)
+{
+    unsigned int x, y;
+    for (y = 0; y < 32; ++y) {
+        for (x = 0; x < 32; ++x) {
+            if (A[y * lda] & (1 << x)) B[x * ldb] |= (uint32_t)1 << y;
+        }
+    }
+}
+*/
 
 #ifndef GPU
 uint8_t reverse_8_bit(uint8_t a) {
