@@ -1,6 +1,9 @@
 #include <omp.h>
 #include <vector>
 #include <mutex>
+#include <iostream>
+#include <algorithm>
+#include <execution>
 #include "darknet.h"
 #include "network.h"
 #include "region_layer.h"
@@ -752,7 +755,8 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
     std::vector<int> fp_for_thresh_per_class(classes,0);
 
     time_t start = time(0);
-#pragma omp parallel for num_threads(72)
+    m=500;
+#pragma omp parallel for num_threads(128)
     for (int image_index = 0; image_index < m;image_index++) {
         int net_index= (omp_get_thread_num()%ngpus   ) ;
         fprintf(stderr, "image_index=%d,thd_id=%d net_index=%d\n", image_index,omp_get_thread_num(),net_index);
@@ -783,7 +787,7 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
                 dets = get_network_boxes(net, 1, 1, thresh, hier_thresh, 0, 0, &nboxes, letter_box);
             }
         }
-        //if (nms) do_nms_sort(dets, nboxes, classes, nms);
+        if (nms) do_nms_sort(dets, nboxes, classes, nms);
 
         char labelpath[4096];
         replace_image_to_label(path, labelpath);
@@ -901,6 +905,7 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
         free_image(*val);
         free_image(*val_resized);
     }
+    puts("end");
 
     if ((tp_for_thresh + fp_for_thresh) > 0)
         avg_iou = avg_iou / (tp_for_thresh + fp_for_thresh);
@@ -910,9 +915,17 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
         if ((tp_for_thresh_per_class[class_id] + fp_for_thresh_per_class[class_id]) > 0)
             avg_iou_per_class[class_id] = avg_iou_per_class[class_id] / (tp_for_thresh_per_class[class_id] + fp_for_thresh_per_class[class_id]);
     }
-
+	auto cyy1=time(NULL);
     // SORT(detections)
-    qsort(detections.data(), detections.size(), sizeof(box_prob), detections_comparator);
+
+	std::sort(std::execution::par_unseq, detections.begin(), detections.end(),
+			[] (const auto &a,const auto &b) {		
+			return a.p<=b.p;
+			}
+		 );
+//	qsort(detections.data(), detections.size(), sizeof(box_prob), detections_comparator);
+	auto cyy2=time(NULL);
+	std::cout<<"qsort time is "<<(cyy2-cyy1)<<std::endl;
 
     typedef struct {
         double precision;
@@ -937,9 +950,6 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
 
     int rank;
     for (rank = 0; rank < detections.size(); ++rank) {
-        if (rank % 100 == 0)
-            printf(" rank = %d of ranks = %zu \r", rank, detections.size());
-
         if (rank > 0) {
             int class_id;
             for (class_id = 0; class_id < classes; ++class_id) {
@@ -1332,7 +1342,7 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
 
         int nboxes = 0;
         detection *dets = get_network_boxes(&net, im.w, im.h, thresh, hier_thresh, 0, 1, &nboxes, letter_box);
-        if (nms > 0) do_nms_sort(dets, nboxes, l.classes, nms);
+	if (nms > 0) do_nms_sort(dets, nboxes, l.classes, nms);
         draw_detections_v3(im, dets, nboxes, thresh, names, alphabet, l.classes, ext_output);
         save_image(im, "predictions");
         if (!dont_show) {
