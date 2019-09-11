@@ -755,7 +755,6 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
     std::vector<int> fp_for_thresh_per_class(classes,0);
 
     time_t start = time(0);
-    m=2000;
 #pragma omp parallel for num_threads(128)
     for (int image_index = 0; image_index < m;image_index++) {
         int net_index= (omp_get_thread_num()%ngpus   ) ;
@@ -976,8 +975,10 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
 		    pr[class_id][rank].fp += pr[class_id][rank - 1].fp;
 	    }
     }
+
+#pragma omp parallel for num_threads(108)
     for (i = 0; i < classes; ++i) {
-	for (rank = 0; rank < detections.size(); ++rank) {
+	    for (int rank = 0; rank < detections.size(); ++rank) {
 	    const int tp = pr[i][rank].tp;
 	    const int fp = pr[i][rank].fp;
 	    const int fn = truth_classes_count[i] - tp;    // false-negative = objects - true-positive
