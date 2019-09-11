@@ -16,6 +16,8 @@ int gpu_index = 0;
 #include <time.h>
 #include <cuda.h>
 #include <stdio.h>
+#include <vector>
+#include <mutex>
 
 #pragma comment(lib, "cuda.lib")
 
@@ -160,7 +162,7 @@ cudnnHandle_t cudnn_handle()
         cudnnCreate(&handle[i]);
         init[i] = 1;
         cudnnStatus_t status = cudnnSetStream(handle[i], get_cuda_stream());
-        CHECK_CUDA(status);
+        CHECK_CUDA((cudaError_t)status);
     }
     return handle[i];
 }

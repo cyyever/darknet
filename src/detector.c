@@ -741,7 +741,6 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
 
     std::vector<box_prob> detections;
     detections.reserve(5000);
-    int detections_count = 0;
     int unique_truth_count = 0;
 
     int* truth_classes_count = (int*)xcalloc(classes, sizeof(int));
@@ -752,10 +751,10 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
     int *fp_for_thresh_per_class = (int*)xcalloc(classes, sizeof(int));
 
     time_t start = time(0);
-#pragma omp parallel for num_threads(8)
+#pragma omp parallel for num_threads(72)
     for (int image_index = 0; image_index < m;image_index++) {
         int net_index= (omp_get_thread_num()%ngpus   ) ;
-        /* fprintf(stderr, "image_index=%d,thd_id=%d\n", image_index,omp_get_thread_num()); */
+        fprintf(stderr, "image_index=%d,thd_id=%d net_index=%d\n", image_index,omp_get_thread_num(),net_index);
         char *path = paths[image_index];
         load_args* thd_args = (load_args*)xcalloc(1, sizeof(load_args));
         *thd_args=args;
@@ -770,16 +769,12 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
         float *X = val_resized->data;
         network *net=&(nets[net_index]);
 
-        {
-          std::lock_guard<std::mutex> lk(mus.at(net_index));
-          network_predict(*net, X);
-        }
-
         int nboxes = 0;
         float hier_thresh = 0;
         detection *dets;
         {
           std::lock_guard<std::mutex> lk(mus.at(net_index));
+          network_predict(*net, X);
           if (args.type == LETTERBOX_DATA) {
             dets = get_network_boxes(net, val->w, val->h, thresh, hier_thresh, 0, 1, &nboxes, letter_box);
           }
@@ -787,7 +782,7 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
             dets = get_network_boxes(net, 1, 1, thresh, hier_thresh, 0, 0, &nboxes, letter_box);
           }
         }
-        if (nms) do_nms_sort(dets, nboxes, classes, nms);
+	//if (nms) do_nms_sort(dets, nboxes, classes, nms);
 
         char labelpath[4096];
         replace_image_to_label(path, labelpath);
@@ -857,7 +852,7 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
                     box t = { truth_dif[j].x, truth_dif[j].y, truth_dif[j].w, truth_dif[j].h };
                     float current_iou = box_iou(dets[i].bbox, t);
                     if (current_iou > iou_thresh && class_id == truth_dif[j].id) {
-                      --detections_count;
+		      detections.pop_back();
                       break;
                     }
                   }
@@ -917,22 +912,22 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
     // for PR-curve
     pr_t** pr = (pr_t**)xcalloc(classes, sizeof(pr_t*));
     for (i = 0; i < classes; ++i) {
-        pr[i] = (pr_t*)xcalloc(detections_count, sizeof(pr_t));
+        pr[i] = (pr_t*)xcalloc(detections.size(), sizeof(pr_t));
     }
-    printf("\n detections_count = %d, unique_truth_count = %d  \n", detections_count, unique_truth_count);
+    printf("\n detections_count = %d, unique_truth_count = %d  \n", detections.size(), unique_truth_count);
 
 
     int* detection_per_class_count = (int*)xcalloc(classes, sizeof(int));
-    for (j = 0; j < detections_count; ++j) {
+    for (j = 0; j < detections.size(); ++j) {
         detection_per_class_count[detections[j].class_id]++;
     }
 
     int* truth_flags = (int*)xcalloc(unique_truth_count, sizeof(int));
 
     int rank;
-    for (rank = 0; rank < detections_count; ++rank) {
+    for (rank = 0; rank < detections.size(); ++rank) {
         if (rank % 100 == 0)
-            printf(" rank = %d of ranks = %d \r", rank, detections_count);
+            printf(" rank = %d of ranks = %d \r", rank, detections.size());
 
         if (rank > 0) {
             int class_id;
@@ -969,7 +964,7 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
             if ((tp + fn) > 0) pr[i][rank].recall = (double)tp / (double)(tp + fn);
             else pr[i][rank].recall = 0;
 
-            if (rank == (detections_count - 1) && detection_per_class_count[i] != (tp + fp)) {    // check for last rank
+            if (rank == ((int)(detections.size()) - 1) && detection_per_class_count[i] != (tp + fp)) {    // check for last rank
                     printf(" class_id: %d - detections = %d, tp+fp = %d, tp = %d, fp = %d \n", i, detection_per_class_count[i], tp+fp, tp, fp);
             }
         }
@@ -991,9 +986,9 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
         // correct mAP calculation: ImageNet, PascalVOC 2010-2012
         if (map_points == 0)
         {
-            double last_recall = pr[i][detections_count - 1].recall;
-            double last_precision = pr[i][detections_count - 1].precision;
-            for (rank = detections_count - 2; rank >= 0; --rank)
+            double last_recall = pr[i][detections.size() - 1].recall;
+            double last_precision = pr[i][detections.size() - 1].precision;
+	    for (rank = (int)(detections.size()) - 2; rank >= 0; --rank)
             {
                 double delta_recall = last_recall - pr[i][rank].recall;
                 last_recall = pr[i][rank].recall;
@@ -1012,7 +1007,7 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
             for (point = 0; point < map_points; ++point) {
                 double cur_recall = point * 1.0 / (map_points-1);
                 double cur_precision = 0;
-                for (rank = 0; rank < detections_count; ++rank)
+                for (rank = 0; rank < detections.size(); ++rank)
                 {
                     if (pr[i][rank].recall >= cur_recall) {    // > or >=
                         if (pr[i][rank].precision > cur_precision) {
