@@ -735,20 +735,21 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
     if (letter_box) args.type = LETTERBOX_DATA;
     else args.type = IMAGE_DATA;
 
-    float avg_iou = 0;
-    int tp_for_thresh = 0;
-    int fp_for_thresh = 0;
+    std::mutex omp_mu;
+    float avg_iou{0};
+    int tp_for_thresh ( 0);
+    int fp_for_thresh ( 0);
 
     std::vector<box_prob> detections;
     detections.reserve(5000);
     int unique_truth_count = 0;
 
-    int* truth_classes_count = (int*)xcalloc(classes, sizeof(int));
+    std::vector<int> truth_classes_count(classes,0);
 
     // For multi-class precision and recall computation
-    float *avg_iou_per_class = (float*)xcalloc(classes, sizeof(float));
-    int *tp_for_thresh_per_class = (int*)xcalloc(classes, sizeof(int));
-    int *fp_for_thresh_per_class = (int*)xcalloc(classes, sizeof(int));
+    std::vector<float> avg_iou_per_class(classes,0);
+    std::vector<int> tp_for_thresh_per_class(classes,0);
+    std::vector<int> fp_for_thresh_per_class(classes,0);
 
     time_t start = time(0);
 #pragma omp parallel for num_threads(72)
@@ -773,16 +774,16 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
         float hier_thresh = 0;
         detection *dets;
         {
-          std::lock_guard<std::mutex> lk(mus.at(net_index));
-          network_predict(*net, X);
-          if (args.type == LETTERBOX_DATA) {
-            dets = get_network_boxes(net, val->w, val->h, thresh, hier_thresh, 0, 1, &nboxes, letter_box);
-          }
-          else {
-            dets = get_network_boxes(net, 1, 1, thresh, hier_thresh, 0, 0, &nboxes, letter_box);
-          }
+            std::lock_guard<std::mutex> lk(mus.at(net_index));
+            network_predict(*net, X);
+            if (args.type == LETTERBOX_DATA) {
+                dets = get_network_boxes(net, val->w, val->h, thresh, hier_thresh, 0, 1, &nboxes, letter_box);
+            }
+            else {
+                dets = get_network_boxes(net, 1, 1, thresh, hier_thresh, 0, 0, &nboxes, letter_box);
+            }
         }
-	//if (nms) do_nms_sort(dets, nboxes, classes, nms);
+        //if (nms) do_nms_sort(dets, nboxes, classes, nms);
 
         char labelpath[4096];
         replace_image_to_label(path, labelpath);
@@ -792,9 +793,9 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
 
 #pragma omp critical 
         {
-          for (j = 0; j < num_labels; ++j) {
-            truth_classes_count[truth[j].id]++;
-          }
+            for (j = 0; j < num_labels; ++j) {
+                truth_classes_count[truth[j].id]++;
+            }
         }
 
         // difficult
@@ -810,79 +811,89 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
             truth_dif = read_boxes(labelpath_dif, &num_labels_dif);
         }
 
+
+        int old_unique_truth_count=0;
 #pragma omp critical 
         {
-          const size_t checkpoint_detections_count = detections.size();
+            old_unique_truth_count=unique_truth_count;
+            unique_truth_count += num_labels;
+        }
 
-          for (i = 0; i < nboxes; ++i) {
+        std::vector<box_prob> thd_detections;
+        for (i = 0; i < nboxes; ++i) {
             int class_id;
             for (class_id = 0; class_id < classes; ++class_id) {
-              float prob = dets[i].prob[class_id];
-              if (prob > 0) {
-                detections.emplace_back();
-                detections.back().b = dets[i].bbox;
-                detections.back().p = prob;
-                detections.back().image_index = image_index;
-                detections.back().class_id = class_id;
-                detections.back().truth_flag = 0;
-                detections.back().unique_truth_index = -1;
+                float prob = dets[i].prob[class_id];
+                if (prob > 0) {
+                    thd_detections.emplace_back();
+                    thd_detections.back().b = dets[i].bbox;
+                    thd_detections.back().p = prob;
+                    thd_detections.back().image_index = image_index;
+                    thd_detections.back().class_id = class_id;
+                    thd_detections.back().truth_flag = 0;
+                    thd_detections.back().unique_truth_index = -1;
 
-                int truth_index = -1;
-                float max_iou = 0;
-                for (j = 0; j < num_labels; ++j)
-                {
-                  box t = { truth[j].x, truth[j].y, truth[j].w, truth[j].h };
-                  float current_iou = box_iou(dets[i].bbox, t);
-                  if (current_iou > iou_thresh && class_id == truth[j].id) {
-                    if (current_iou > max_iou) {
-                      max_iou = current_iou;
-                      truth_index = unique_truth_count + j;
+                    int truth_index = -1;
+                    float max_iou = 0;
+                    for (j = 0; j < num_labels; ++j)
+                    {
+                        box t = { truth[j].x, truth[j].y, truth[j].w, truth[j].h };
+                        float current_iou = box_iou(dets[i].bbox, t);
+                        if (current_iou > iou_thresh && class_id == truth[j].id) {
+                            if (current_iou > max_iou) {
+                                max_iou = current_iou;
+                                truth_index = old_unique_truth_count + j;
+                            }
+                        }
                     }
-                  }
-                }
 
-                // best IoU
-                if (truth_index > -1) {
-                  detections.back().truth_flag = 1;
-                  detections.back().unique_truth_index = truth_index;
-                }
-                else {
-                  // if object is difficult then remove detection
-                  for (j = 0; j < num_labels_dif; ++j) {
-                    box t = { truth_dif[j].x, truth_dif[j].y, truth_dif[j].w, truth_dif[j].h };
-                    float current_iou = box_iou(dets[i].bbox, t);
-                    if (current_iou > iou_thresh && class_id == truth_dif[j].id) {
-		      detections.pop_back();
-                      break;
+                    // best IoU
+                    if (truth_index > -1) {
+                        thd_detections.back().truth_flag = 1;
+                        thd_detections.back().unique_truth_index = truth_index;
                     }
-                  }
-                }
-
-                // calc avg IoU, true-positives, false-positives for required Threshold
-                if (prob > thresh_calc_avg_iou) {
-                  int  found = 0;
-                  for (size_t z = checkpoint_detections_count; z < detections.size() ; ++z) {
-                    if (detections[z].unique_truth_index == truth_index) {
-                      found = 1; break;
+                    else {
+                        // if object is difficult then remove detection
+                        for (j = 0; j < num_labels_dif; ++j) {
+                            box t = { truth_dif[j].x, truth_dif[j].y, truth_dif[j].w, truth_dif[j].h };
+                            float current_iou = box_iou(dets[i].bbox, t);
+                            if (current_iou > iou_thresh && class_id == truth_dif[j].id) {
+                                thd_detections.pop_back();
+                                break;
+                            }
+                        }
                     }
-                  }
 
-                  if (truth_index > -1 && found == 0) {
-                    avg_iou += max_iou;
-                    ++tp_for_thresh;
-                    avg_iou_per_class[class_id] += max_iou;
-                    tp_for_thresh_per_class[class_id]++;
-                  }
-                  else{
-                    fp_for_thresh++;
-                    fp_for_thresh_per_class[class_id]++;
-                  }
+                    // calc avg IoU, true-positives, false-positives for required Threshold
+                    if (prob > thresh_calc_avg_iou) {
+                        int  found = 0;
+                        for (auto const &detection:thd_detections) {
+                            if (detection.unique_truth_index == truth_index) {
+                                found = 1; break;
+                            }
+                        }
+
+                        {
+                            std::lock_guard<std::mutex> lk(omp_mu);
+                            if (truth_index > -1 && found == 0) {
+                                avg_iou += max_iou;
+                                ++tp_for_thresh;
+                                avg_iou_per_class[class_id] += max_iou;
+                                tp_for_thresh_per_class[class_id]++;
+                            }
+                            else{
+                                fp_for_thresh++;
+                                fp_for_thresh_per_class[class_id]++;
+                            }
+                        }
+                    }
                 }
-              }
             }
-          }
+        }
 
-          unique_truth_count += num_labels;
+#pragma omp critical 
+        {
+            detections.insert(detections.end(), thd_detections.begin(), thd_detections.end());
         }
 
         free_detections(dets, nboxes);
@@ -914,7 +925,7 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
     for (i = 0; i < classes; ++i) {
         pr[i] = (pr_t*)xcalloc(detections.size(), sizeof(pr_t));
     }
-    printf("\n detections_count = %d, unique_truth_count = %d  \n", detections.size(), unique_truth_count);
+    printf("\n detections_count = %zu, unique_truth_count = %d  \n", detections.size(), unique_truth_count);
 
 
     int* detection_per_class_count = (int*)xcalloc(classes, sizeof(int));
@@ -927,7 +938,7 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
     int rank;
     for (rank = 0; rank < detections.size(); ++rank) {
         if (rank % 100 == 0)
-            printf(" rank = %d of ranks = %d \r", rank, detections.size());
+            printf(" rank = %d of ranks = %zu \r", rank, detections.size());
 
         if (rank > 0) {
             int class_id;
@@ -1052,12 +1063,8 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
         free(pr[i]);
     }
     free(pr);
-    free(truth_classes_count);
     free(detection_per_class_count);
 
-    free(avg_iou_per_class);
-    free(tp_for_thresh_per_class);
-    free(fp_for_thresh_per_class);
 
     fprintf(stderr, "Total Detection Time: %ld Seconds\n", time(0) - start);
     printf("\nSet -points flag:\n");
