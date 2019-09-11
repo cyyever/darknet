@@ -927,7 +927,7 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
 
 	std::sort(std::execution::par_unseq, detections.begin(), detections.end(),
 			[] (const auto &a,const auto &b) {		
-			return a.p<=b.p;
+			return a.p>=b.p;
 			}
 		 );
 //	qsort(detections.data(), detections.size(), sizeof(box_prob), detections_comparator);
