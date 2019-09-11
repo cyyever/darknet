@@ -755,7 +755,7 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
     std::vector<int> fp_for_thresh_per_class(classes,0);
 
     time_t start = time(0);
-    m=500;
+    m=2000;
 #pragma omp parallel for num_threads(128)
     for (int image_index = 0; image_index < m;image_index++) {
         int net_index= (omp_get_thread_num()%ngpus   ) ;
@@ -787,7 +787,10 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
                 dets = get_network_boxes(net, 1, 1, thresh, hier_thresh, 0, 0, &nboxes, letter_box);
             }
         }
+	auto cyy1=time(NULL);
         if (nms) do_nms_sort(dets, nboxes, classes, nms);
+	auto cyy2=time(NULL);
+	std::cout<<"do_nms time is "<<(cyy2-cyy1)<<std::endl;
 
         char labelpath[4096];
         replace_image_to_label(path, labelpath);
@@ -905,7 +908,11 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
         free_image(*val);
         free_image(*val_resized);
     }
+	auto cyy3=time(NULL);
     puts("end");
+    std::cout<<"for time is "<<(cyy3-start)<<std::endl;
+    std::cout<<"detection count is "<<detections.size()<<std::endl;
+
 
     if ((tp_for_thresh + fp_for_thresh) > 0)
         avg_iou = avg_iou / (tp_for_thresh + fp_for_thresh);
@@ -930,7 +937,7 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
     typedef struct {
         double precision;
         double recall;
-        int tp, fp, fn;
+        int tp, fp;
     } pr_t;
 
     // for PR-curve
@@ -940,7 +947,6 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
     }
     printf("\n detections_count = %zu, unique_truth_count = %d  \n", detections.size(), unique_truth_count);
 
-
     int* detection_per_class_count = (int*)xcalloc(classes, sizeof(int));
     for (j = 0; j < detections.size(); ++j) {
         detection_per_class_count[detections[j].class_id]++;
@@ -948,48 +954,46 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
 
     int* truth_flags = (int*)xcalloc(unique_truth_count, sizeof(int));
 
+    cyy1=time(NULL);
     int rank;
     for (rank = 0; rank < detections.size(); ++rank) {
-        if (rank > 0) {
-            int class_id;
-            for (class_id = 0; class_id < classes; ++class_id) {
-                pr[class_id][rank].tp = pr[class_id][rank - 1].tp;
-                pr[class_id][rank].fp = pr[class_id][rank - 1].fp;
-            }
-        }
-
-        box_prob d = detections[rank];
-        // if (detected && isn't detected before)
-        if (d.truth_flag == 1) {
-            if (truth_flags[d.unique_truth_index] == 0)
-            {
-                truth_flags[d.unique_truth_index] = 1;
-                pr[d.class_id][rank].tp++;    // true-positive
-            } else
-                pr[d.class_id][rank].fp++;
-        }
-        else {
-            pr[d.class_id][rank].fp++;    // false-positive
-        }
-
-        for (i = 0; i < classes; ++i)
-        {
-            const int tp = pr[i][rank].tp;
-            const int fp = pr[i][rank].fp;
-            const int fn = truth_classes_count[i] - tp;    // false-negative = objects - true-positive
-            pr[i][rank].fn = fn;
-
-            if ((tp + fp) > 0) pr[i][rank].precision = (double)tp / (double)(tp + fp);
-            else pr[i][rank].precision = 0;
-
-            if ((tp + fn) > 0) pr[i][rank].recall = (double)tp / (double)(tp + fn);
-            else pr[i][rank].recall = 0;
-
-            if (rank == ((int)(detections.size()) - 1) && detection_per_class_count[i] != (tp + fp)) {    // check for last rank
-                    printf(" class_id: %d - detections = %d, tp+fp = %d, tp = %d, fp = %d \n", i, detection_per_class_count[i], tp+fp, tp, fp);
-            }
-        }
+	const  auto &d = detections[rank];
+	if (d.truth_flag == 1) {
+	    if (truth_flags[d.unique_truth_index] == 0)
+	    {
+		truth_flags[d.unique_truth_index] = 1;
+		pr[d.class_id][rank].tp++;    // true-positive
+	    } else
+		pr[d.class_id][rank].fp++;
+	}
+	else {
+	    pr[d.class_id][rank].fp++;    // false-positive
+	}
     }
+    for (int class_id = 0; class_id < classes; ++class_id) {
+	    for (int rank = 1; rank < detections.size(); ++rank) {
+		    pr[class_id][rank].tp += pr[class_id][rank - 1].tp;
+		    pr[class_id][rank].fp += pr[class_id][rank - 1].fp;
+	    }
+    }
+    for (i = 0; i < classes; ++i) {
+	for (rank = 0; rank < detections.size(); ++rank) {
+	    const int tp = pr[i][rank].tp;
+	    const int fp = pr[i][rank].fp;
+	    const int fn = truth_classes_count[i] - tp;    // false-negative = objects - true-positive
+	    if ((tp + fp) > 0) pr[i][rank].precision = (double)tp / (double)(tp + fp);
+	    else pr[i][rank].precision = 0;
+
+	    if ((tp + fn) > 0) pr[i][rank].recall = (double)tp / (double)(tp + fn);
+	    else pr[i][rank].recall = 0;
+
+	    if (rank == ((int)(detections.size()) - 1) && detection_per_class_count[i] != (tp + fp)) {    // check for last rank
+		printf(" class_id: %d - detections = %d, tp+fp = %d, tp = %d, fp = %d \n", i, detection_per_class_count[i], tp+fp, tp, fp);
+	    }
+	}
+    }
+    cyy2=time(NULL);
+    std::cout<<"rank time is "<<(cyy2-cyy1)<<std::endl;
 
     free(truth_flags);
 
@@ -1036,7 +1040,7 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
                         }
                     }
                 }
-                //printf("class_id = %d, point = %d, cur_recall = %.4f, cur_precision = %.4f \n", i, point, cur_recall, cur_precision);
+																																													//printf("class_id = %d, point = %d, cur_recall = %.4f, cur_precision = %.4f \n", i, point, cur_recall, cur_precision);
 
                 avg_precision += cur_precision;
             }
