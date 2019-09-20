@@ -1,8 +1,16 @@
 FROM nvidia/cuda:10.1-cudnn7-devel
-RUN apt-get update \
- && apt-get install --no-install-recommends -y gcc build-essential cmake
+RUN http_proxy=http://172.16.153.103:3128 apt-get update \
+ && http_proxy=http://172.16.153.103:3128 apt-get install --no-install-recommends -y gcc build-essential cmake wget software-properties-common
+RUN http_proxy=http://172.16.153.103:3128 https_proxy=http://172.16.153.103:3128 HTTP_PROXY=http://172.16.153.103:3128 HTTPS_PROXY=http://172.16.153.103:3128 add-apt-repository -y ppa:ubuntu-toolchain-r/test
+RUN http_proxy=http://172.16.153.103:3128 apt-get update \
+ && http_proxy=http://172.16.153.103:3128 apt-get install --no-install-recommends -y gcc-9 g++-9
+RUN cd /root && https_proxy=http://172.16.153.103:3128 wget https://github.com/Kitware/CMake/releases/download/v3.15.2/cmake-3.15.2.tar.gz 
+RUN cd /root && tar -xf cmake-3.15.2.tar.gz && cd cmake-3.15.2 && mkdir -p aa && cd aa && cmake .. && make -j16 install && apt-get remove cmake -y
+RUN http_proxy=http://172.16.153.103:3128 apt-get update \
+ && http_proxy=http://172.16.153.103:3128 apt-get install --no-install-recommends -y git
+RUN cd /opt && http_proxy=http://172.16.153.103:3128 HTTPS_PROXY=http://172.16.153.103:3128 https_proxy=http://172.16.153.103:3128 git clone https://github.com/intel/tbb.git --depth 1
 RUN mkdir -p /opt/darknet
 RUN mkdir -p /opt/bin
 COPY . /opt/darknet
 WORKDIR /opt/darknet
-RUN mkdir build2 && cd build2 && cmake -DENABLE_ZED_CAMERA=off -DENABLE_CUDNN_HALF=off -DENABLE_OPENCV=off .. && make -j8 && cp darknet /opt/bin
+RUN mkdir build2 && cd build2 && cmake -DCMAKE_CXX_COMPILER=g++-9 -DCMAKE_C_COMPILER=gcc-9  -DCMAKE_BUILD_TYPE=release -DBUILD_USELIB_TRACK=off -DENABLE_ZED_CAMERA=off -DENABLE_CUDNN_HALF=off -DENABLE_OPENCV=off .. && make -j8 && cp darknet /opt/bin
